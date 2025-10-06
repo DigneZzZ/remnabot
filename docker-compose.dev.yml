@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  remnabot-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remnabot-dev
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      - DEBUG=True
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    networks:
+      - remnabot-network
+    depends_on:
+      - redis
+    command: python -m src.main
+
+  redis:
+    image: redis:7-alpine
+    container_name: remnabot-redis-dev
+    restart: "no"
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data-dev:/data
+    networks:
+      - remnabot-network
+
+networks:
+  remnabot-network:
+    driver: bridge
+
+volumes:
+  redis-data-dev:

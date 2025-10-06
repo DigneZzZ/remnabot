@@ -1,37 +1,52 @@
-version: '3.8'
-
 services:
   remnabot-dev:
     build:
       context: .
       dockerfile: Dockerfile
+      cache_from:
+        - ghcr.io/dignezzz/remnabot:latest
     container_name: remnabot-dev
     restart: "no"
     env_file:
       - .env
     environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
       - DEBUG=True
       - LOG_LEVEL=DEBUG
     volumes:
-      - ./src:/app/src
+      - ./src:/app/src:ro
       - ./logs:/app/logs
     networks:
       - remnabot-network
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     command: python -m src.main
 
   redis:
     image: redis:7-alpine
     container_name: remnabot-redis-dev
     restart: "no"
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
       - redis-data-dev:/data
     networks:
       - remnabot-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 networks:
   remnabot-network:

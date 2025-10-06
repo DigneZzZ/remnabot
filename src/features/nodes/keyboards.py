@@ -20,8 +20,12 @@ def nodes_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def node_actions(node_uuid: str) -> InlineKeyboardMarkup:
+def node_actions(node_uuid: str, is_disabled: bool = False) -> InlineKeyboardMarkup:
     """Node action buttons"""
+    # Toggle button text based on current state
+    toggle_text = "🟢 Включить" if is_disabled else "🔴 Выключить"
+    toggle_action = "node_enable" if is_disabled else "node_disable"
+    
     keyboard = [
         [
             InlineKeyboardButton("✏️ Редактировать", callback_data=f"node_edit:{node_uuid}"),
@@ -29,6 +33,7 @@ def node_actions(node_uuid: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🔄 Перезапустить", callback_data=f"node_restart:{node_uuid}"),
+            InlineKeyboardButton(toggle_text, callback_data=f"{toggle_action}:{node_uuid}"),
         ],
         [
             InlineKeyboardButton("🗑️ Удалить", callback_data=f"node_delete:{node_uuid}"),

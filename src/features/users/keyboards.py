@@ -85,6 +85,35 @@ def delete_confirmation(user_uuid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def user_devices_actions(user_uuid: str, has_devices: bool = False) -> InlineKeyboardMarkup:
+    """User devices action buttons"""
+    keyboard = []
+    
+    if has_devices:
+        keyboard.append([
+            InlineKeyboardButton("🗑️ Очистить устройства", callback_data=f"user_clear_devices_confirm:{user_uuid}"),
+        ])
+    
+    keyboard.append([
+        InlineKeyboardButton("◀️ Назад к пользователю", callback_data=f"user_view:{user_uuid}"),
+    ])
+    
+    return InlineKeyboardMarkup(keyboard)
+
+
+def clear_devices_confirmation(user_uuid: str, devices_count: int) -> InlineKeyboardMarkup:
+    """Clear devices confirmation keyboard"""
+    keyboard = [
+        [
+            InlineKeyboardButton(f"✅ Да, удалить ({devices_count} шт.)", callback_data=f"user_clear_devices_execute:{user_uuid}"),
+        ],
+        [
+            InlineKeyboardButton("❌ Отмена", callback_data=f"user_devices:{user_uuid}"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 def pagination(current_page: int, total_pages: int, prefix: str = "users_page") -> List[InlineKeyboardButton]:
     """Create pagination buttons"""
     buttons = []

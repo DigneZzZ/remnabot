@@ -86,6 +86,17 @@ def main():
     # Create bot application
     application = create_bot_application()
     
+    # Add debug middleware to log all updates
+    async def log_update(update, context):
+        if update.message and update.message.text:
+            log.info(f"📩 INCOMING MESSAGE: '{update.message.text}' from user {update.effective_user.id}")
+        elif update.callback_query:
+            log.info(f"🔘 INCOMING CALLBACK: '{update.callback_query.data}' from user {update.effective_user.id}")
+    
+    from telegram.ext import TypeHandler
+    from telegram import Update as TelegramUpdate
+    application.add_handler(TypeHandler(TelegramUpdate, log_update), group=-1)
+    
     # Register handlers
     log.info("Registering handlers...")
     register_start_handlers(application)

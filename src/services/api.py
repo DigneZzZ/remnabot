@@ -224,7 +224,7 @@ class RemnaWaveAPIClient:
         """Get host by UUID"""
         try:
             log.info(f"Fetching host {host_uuid}")
-            response = await self.sdk.hosts.get_host_by_uuid(uuid=host_uuid)
+            response = await self.sdk.hosts.get_one_host(host_uuid)
             return {"response": response.model_dump(by_alias=True)}
         except ApiError as e:
             raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
@@ -251,8 +251,10 @@ class RemnaWaveAPIClient:
         try:
             log.info(f"Updating host {host_uuid}")
             from remnawave.models import UpdateHostRequestDto
+            # UUID должен быть включен в DTO
+            host_data['uuid'] = host_uuid
             update_dto = UpdateHostRequestDto(**host_data)
-            response = await self.sdk.hosts.update_host(uuid=host_uuid, body=update_dto)
+            response = await self.sdk.hosts.update_host(body=update_dto)
             return {"response": response.model_dump(by_alias=True)}
         except ApiError as e:
             raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
@@ -264,13 +266,42 @@ class RemnaWaveAPIClient:
         """Delete host"""
         try:
             log.info(f"Deleting host {host_uuid}")
-            response = await self.sdk.hosts.delete_host(uuid=host_uuid)
+            # Метод принимает uuid как позиционный аргумент
+            response = await self.sdk.hosts.delete_host(host_uuid)
             return {"response": response.model_dump(by_alias=True)}
         except ApiError as e:
             raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
         except Exception as e:
             log.exception(f"Error deleting host: {e}")
             raise RemnaWaveAPIError(f"Error deleting host: {str(e)}")
+    
+    async def create_host(self, create_data: "CreateHostRequestDto") -> Dict[str, Any]:
+        """Create new host"""
+        try:
+            log.info(f"Creating host with remark: {create_data.remark}")
+            response = await self.sdk.hosts.create_host(body=create_data)
+            return {"response": response.model_dump(by_alias=True)}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error creating host: {e}")
+            raise RemnaWaveAPIError(f"Error creating host: {str(e)}")
+    
+    # ======================
+    # INBOUNDS API
+    # ======================
+    
+    async def get_inbounds(self) -> Dict[str, Any]:
+        """Fetch all inbounds"""
+        try:
+            log.info("Fetching inbounds")
+            response = await self.sdk.inbounds.get_all_inbounds()
+            return {"response": response.model_dump(by_alias=True)}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error fetching inbounds: {e}")
+            raise RemnaWaveAPIError(f"Error fetching inbounds: {str(e)}")
     
     # ======================
     # NODES API
@@ -328,19 +359,53 @@ class RemnaWaveAPIClient:
             log.exception(f"Error creating node: {e}")
             raise RemnaWaveAPIError(f"Error creating node: {str(e)}")
     
-    async def update_node(self, node_uuid: str, node_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_node(self, update_data) -> Dict[str, Any]:
         """Update node"""
         try:
-            log.info(f"Updating node {node_uuid}")
-            from remnawave.models import UpdateNodeRequestDto
-            update_dto = UpdateNodeRequestDto(**node_data)
-            response = await self.sdk.nodes.update_node(uuid=node_uuid, body=update_dto)
+            log.info(f"Updating node {update_data.uuid}")
+            response = await self.sdk.nodes.update_node(body=update_data)
             return {"response": response.model_dump(by_alias=True)}
         except ApiError as e:
             raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
         except Exception as e:
             log.exception(f"Error updating node: {e}")
             raise RemnaWaveAPIError(f"Error updating node: {str(e)}")
+    
+    async def enable_node(self, node_uuid: str) -> Dict[str, Any]:
+        """Enable node"""
+        try:
+            log.info(f"Enabling node {node_uuid}")
+            response = await self.sdk.nodes.enable_node(uuid=node_uuid)
+            return {"response": response.model_dump(by_alias=True) if hasattr(response, 'model_dump') else {}}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error enabling node: {e}")
+            raise RemnaWaveAPIError(f"Error enabling node: {str(e)}")
+    
+    async def disable_node(self, node_uuid: str) -> Dict[str, Any]:
+        """Disable node"""
+        try:
+            log.info(f"Disabling node {node_uuid}")
+            response = await self.sdk.nodes.disable_node(uuid=node_uuid)
+            return {"response": response.model_dump(by_alias=True) if hasattr(response, 'model_dump') else {}}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error disabling node: {e}")
+            raise RemnaWaveAPIError(f"Error disabling node: {str(e)}")
+    
+    async def restart_node(self, node_uuid: str) -> Dict[str, Any]:
+        """Restart node"""
+        try:
+            log.info(f"Restarting node {node_uuid}")
+            response = await self.sdk.nodes.restart_node(uuid=node_uuid)
+            return {"response": response.model_dump(by_alias=True) if hasattr(response, 'model_dump') else {}}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error restarting node: {e}")
+            raise RemnaWaveAPIError(f"Error restarting node: {str(e)}")
     
     async def delete_node(self, node_uuid: str) -> Dict[str, Any]:
         """Delete node"""
@@ -399,13 +464,17 @@ class RemnaWaveAPIClient:
         """Delete device"""
         try:
             log.info(f"Deleting device {hwid} for user {user_uuid}")
-            # SDK ожидает строки, а не UUID объекты
-            user_uuid_str = str(user_uuid) if not isinstance(user_uuid, str) else user_uuid
-            hwid_str = str(hwid) if not isinstance(hwid, str) else hwid
-            response = await self.sdk.hwid.delete_hwid_to_user(
-                user_uuid=user_uuid_str,
-                hwid=hwid_str
+            from uuid import UUID
+            from remnawave.models.hwid import DeleteUserHwidDeviceRequestDto
+            
+            # Создаём DTO объект для удаления устройства
+            # DTO ожидает UUID объект, а не строку
+            delete_dto = DeleteUserHwidDeviceRequestDto(
+                user_uuid=UUID(user_uuid),
+                hwid=str(hwid)
             )
+            
+            response = await self.sdk.hwid.delete_hwid_to_user(body=delete_dto)
             return {"response": response.model_dump(by_alias=True) if hasattr(response, 'model_dump') else {"success": True}}
         except ApiError as e:
             raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)

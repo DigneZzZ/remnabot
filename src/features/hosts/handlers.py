@@ -146,49 +146,58 @@ async def host_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 
-@admin_only
-async def host_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Delete host"""
-    query = update.callback_query
-    await query.answer()
-    
-    try:
-        host_uuid = query.data.split(":")[1]
-        
-        await query.edit_message_text(
-            "⏳ Удаление хоста...",
-            parse_mode=ParseMode.HTML
-        )
-        
-        await api_client.delete_host(host_uuid)
-        
-        await query.edit_message_text(
-            "✅ <b>Хост успешно удален</b>",
-            reply_markup=host_kb.hosts_menu(),
-            parse_mode=ParseMode.HTML
-        )
-        
-    except RemnaWaveAPIError as e:
-        log.error(f"Error deleting host: {e}")
-        await query.edit_message_text(
-            f"❌ <b>Ошибка при удалении:</b>\n{str(e)}",
-            reply_markup=host_kb.hosts_menu(),
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        log.exception("Unexpected error in host delete")
-        await query.edit_message_text(
-            "❌ <b>Произошла ошибка</b>",
-            reply_markup=host_kb.hosts_menu(),
-            parse_mode=ParseMode.HTML
-        )
+# host_delete_callback removed - now using smart delete with confirmation in delete_handlers.py
 
 
 def register_hosts_handlers(application):
     """Register all host management handlers"""
+    from .edit_handlers_v2 import (
+        host_edit_start,
+        host_field_select,
+        host_field_set_value,
+        host_field_clear_value,
+        host_edit_cancel,
+        host_edit_done,
+        host_edit_noop,
+        host_text_input_handler
+    )
+    from .create_handlers import (
+        host_create_start,
+        host_create_text_handler,
+        host_create_inbound_select,
+        host_create_cancel
+    )
+    from .delete_handlers import (
+        host_delete_start,
+        host_delete_confirm_handler,
+        host_delete_cancel
+    )
+    from telegram.ext import MessageHandler, filters
+    
+    # Register edit handlers (callbacks)
+    application.add_handler(CallbackQueryHandler(host_edit_start, pattern="^host_edit:"))
+    application.add_handler(CallbackQueryHandler(host_field_select, pattern="^host_edit_field:"))
+    application.add_handler(CallbackQueryHandler(host_field_set_value, pattern="^host_field_set:"))
+    application.add_handler(CallbackQueryHandler(host_field_clear_value, pattern="^host_field_clear:"))
+    application.add_handler(CallbackQueryHandler(host_edit_done, pattern="^host_edit_done$"))
+    application.add_handler(CallbackQueryHandler(host_edit_noop, pattern="^host_edit_noop$"))
+    application.add_handler(CallbackQueryHandler(host_edit_cancel, pattern="^host_edit_cancel$"))
+    
+    # Register create handlers (callbacks)
+    application.add_handler(CallbackQueryHandler(host_create_start, pattern="^host_create$"))
+    application.add_handler(CallbackQueryHandler(host_create_inbound_select, pattern="^host_create_inbound:"))
+    application.add_handler(CallbackQueryHandler(host_create_cancel, pattern="^host_create_cancel$"))
+    
+    # Register delete handlers (callbacks)
+    application.add_handler(CallbackQueryHandler(host_delete_start, pattern="^host_delete:"))
+    application.add_handler(CallbackQueryHandler(host_delete_cancel, pattern="^host_delete_cancel:"))
+    
+    # Register message handler for delete confirmation code
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, host_delete_confirm_handler))
+    
+    # Register simple handlers
     application.add_handler(CallbackQueryHandler(hosts_menu_callback, pattern="^hosts_menu$"))
     application.add_handler(CallbackQueryHandler(hosts_list_callback, pattern="^hosts_list$"))
     application.add_handler(CallbackQueryHandler(host_view_callback, pattern="^host_view:"))
-    application.add_handler(CallbackQueryHandler(host_delete_callback, pattern="^host_delete:"))
     
     log.info("✅ Hosts feature handlers registered")

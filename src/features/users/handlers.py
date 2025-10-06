@@ -6,6 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 from telegram.constants import ParseMode
 from datetime import datetime, timedelta, timezone
+import asyncio
 
 from src.core.logger import log
 from src.core.config import settings
@@ -162,8 +163,9 @@ async def user_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         hwid_count = 0
         try:
             hwid_response = await api_client.get_user_devices(user_uuid)
-            devices = hwid_response.get('response', [])
-            hwid_count = len(devices) if devices else 0
+            response_data = hwid_response.get('response', {})
+            # API возвращает {'total': N, 'devices': [...]}
+            hwid_count = response_data.get('total', 0)
         except Exception as e:
             log.warning(f"Failed to get HWID count: {e}")
         
@@ -254,92 +256,8 @@ async def extend_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 @admin_only
-async def user_delete_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show delete confirmation"""
-    query = update.callback_query
-    await query.answer()
-    
-    user_uuid = query.data.split(":")[1]
-    
-    text = """
-⚠️ <b>Подтверждение удаления</b>
-
-Вы уверены, что хотите удалить этого пользователя?
-Это действие необратимо!
-    """
-    
-    await query.edit_message_text(
-        text.strip(),
-        reply_markup=user_kb.delete_confirmation(user_uuid),
-        parse_mode=ParseMode.HTML
-    )
-
-
-@admin_only
-async def user_delete_pin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Request PIN for deletion"""
-    query = update.callback_query
-    await query.answer()
-    
-    user_uuid = query.data.split(":")[1]
-    
-    # Store UUID in context for PIN handler
-    context.user_data['delete_user_uuid'] = user_uuid
-    context.user_data['awaiting_pin'] = True
-    
-    text = f"""
-🔐 <b>Введите PIN-код</b>
-
-Для подтверждения удаления введите PIN-код: <code>{settings.pin_code}</code>
-    """
-    
-    await query.edit_message_text(
-        text.strip(),
-        parse_mode=ParseMode.HTML
-    )
-
-
-@admin_only
-async def handle_delete_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle PIN input for deletion"""
-    # Check if we're waiting for PIN
-    if not context.user_data.get('awaiting_pin'):
-        return
-    
-    user_input = update.message.text
-    correct_pin = settings.pin_code
-    user_uuid = context.user_data.get('delete_user_uuid')
-    
-    try:
-        if user_input != correct_pin:
-            await update.message.reply_text(
-                "❌ <b>Неверный PIN-код!</b>\n\nУдаление отменено.",
-                reply_markup=user_kb.users_menu(),
-                parse_mode=ParseMode.HTML
-            )
-            context.user_data.clear()
-            return
-        
-        # PIN correct, delete user
-        context.user_data.clear()
-        
-        await api_client.delete_user(user_uuid)
-        
-        await update.message.reply_text(
-            "✅ <b>Пользователь успешно удален</b>",
-            reply_markup=user_kb.users_menu(),
-            parse_mode=ParseMode.HTML
-        )
-        
-    except RemnaWaveAPIError as e:
-        log.error(f"Error deleting user: {e}")
-        await update.message.reply_text(
-            f"❌ <b>Ошибка при удалении:</b>\n{str(e)}",
-            reply_markup=user_kb.back_to_main(),
-            parse_mode=ParseMode.HTML
-        )
-    finally:
-        context.user_data.clear()
+# OLD PIN-BASED DELETE HANDLERS - REPLACED WITH SMART DELETE IN delete_handlers.py
+# user_delete_confirm_callback, user_delete_pin_callback, handle_delete_pin - removed
 
 
 @admin_only
@@ -518,13 +436,16 @@ async def user_devices_callback(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Получаем устройства пользователя
         devices_response = await api_client.get_user_devices(user_uuid)
-        devices = devices_response.get('response', [])
+        response_data = devices_response.get('response', {})
+        # API возвращает {'total': N, 'devices': [...]}
+        devices = response_data.get('devices', [])
+        total_devices = response_data.get('total', 0)
         
         text = f"📱 <b>Устройства пользователя</b>\n"
         text += f"👤 <b>Пользователь:</b> {username}\n"
         text += f"🔑 <b>UUID:</b> <code>{user_uuid}</code>\n\n"
         
-        if not devices:
+        if not devices or total_devices == 0:
             text += "❌ <b>У пользователя нет зарегистрированных устройств</b>\n\n"
             text += "<i>Устройства появятся после первого подключения к VPN</i>"
         else:
@@ -552,7 +473,7 @@ async def user_devices_callback(update: Update, context: ContextTypes.DEFAULT_TY
         
         await query.edit_message_text(
             text.strip(),
-            reply_markup=user_kb.user_actions(user_uuid),
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=total_devices > 0),
             parse_mode=ParseMode.HTML
         )
         
@@ -560,14 +481,163 @@ async def user_devices_callback(update: Update, context: ContextTypes.DEFAULT_TY
         log.error(f"Error fetching devices: {e.message}")
         await query.edit_message_text(
             f"❌ <b>Ошибка:</b> {e.message}",
-            reply_markup=user_kb.user_actions(user_uuid),
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
         log.exception("Unexpected error fetching devices")
         await query.edit_message_text(
             "❌ <b>Произошла ошибка при загрузке устройств</b>",
-            reply_markup=user_kb.user_actions(user_uuid),
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+            parse_mode=ParseMode.HTML
+        )
+
+
+@admin_only
+async def user_clear_devices_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm clearing all user devices"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_uuid = query.data.split(":")[1]
+    
+    try:
+        # Получаем информацию о пользователе и устройствах
+        user_response = await api_client.get_user(user_uuid)
+        user = user_response.get('response', {})
+        username = user.get('username', 'N/A')
+        
+        devices_response = await api_client.get_user_devices(user_uuid)
+        response_data = devices_response.get('response', {})
+        total_devices = response_data.get('total', 0)
+        
+        if total_devices == 0:
+            await query.edit_message_text(
+                "❌ <b>У пользователя нет устройств для удаления</b>",
+                reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        text = f"""
+⚠️ <b>Подтверждение очистки устройств</b>
+
+👤 <b>Пользователь:</b> {username}
+📱 <b>Устройств:</b> {total_devices}
+
+<b>Вы уверены, что хотите удалить все зарегистрированные устройства?</b>
+
+<i>Это действие нельзя отменить!</i>
+        """
+        
+        await query.edit_message_text(
+            text.strip(),
+            reply_markup=user_kb.clear_devices_confirmation(user_uuid, total_devices),
+            parse_mode=ParseMode.HTML
+        )
+        
+    except RemnaWaveAPIError as e:
+        log.error(f"Error confirming device clearing: {e.message}")
+        await query.edit_message_text(
+            f"❌ <b>Ошибка:</b> {e.message}",
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        log.exception("Unexpected error confirming device clearing")
+        await query.edit_message_text(
+            "❌ <b>Произошла ошибка</b>",
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+            parse_mode=ParseMode.HTML
+        )
+
+
+@admin_only
+async def user_clear_devices_execute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Execute clearing all user devices"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_uuid = query.data.split(":")[1]
+    
+    try:
+        # Получаем список устройств
+        devices_response = await api_client.get_user_devices(user_uuid)
+        response_data = devices_response.get('response', {})
+        devices = response_data.get('devices', [])
+        total_devices = response_data.get('total', 0)
+        
+        if not devices or total_devices == 0:
+            await query.edit_message_text(
+                "❌ <b>У пользователя нет устройств для удаления</b>",
+                reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Показываем прогресс
+        progress_text = f"🔄 <b>Удаление устройств...</b>\n\nУдалено: 0 / {total_devices}"
+        await query.edit_message_text(
+            progress_text,
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Удаляем каждое устройство
+        deleted_count = 0
+        failed_count = 0
+        
+        for idx, device in enumerate(devices, 1):
+            hwid = device.get('hwid')
+            if hwid:
+                try:
+                    await api_client.delete_device(user_uuid, hwid)
+                    deleted_count += 1
+                    
+                    # Обновляем прогресс каждые 3 устройства или на последнем
+                    if idx % 3 == 0 or idx == total_devices:
+                        progress_text = f"🔄 <b>Удаление устройств...</b>\n\nУдалено: {deleted_count} / {total_devices}"
+                        if failed_count > 0:
+                            progress_text += f"\n❌ Ошибок: {failed_count}"
+                        await query.edit_message_text(
+                            progress_text,
+                            parse_mode=ParseMode.HTML
+                        )
+                    
+                    # Небольшая задержка между запросами
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    log.error(f"Failed to delete device {hwid}: {e}")
+                    failed_count += 1
+        
+        # Финальное сообщение
+        result_text = f"""
+✅ <b>Очистка устройств завершена!</b>
+
+📊 <b>Результаты:</b>
+├ Успешно удалено: {deleted_count}
+└ Ошибок: {failed_count}
+
+<b>Всего обработано:</b> {total_devices}
+        """
+        
+        await query.edit_message_text(
+            result_text.strip(),
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+            parse_mode=ParseMode.HTML
+        )
+        
+    except RemnaWaveAPIError as e:
+        log.error(f"Error clearing devices: {e.message}")
+        await query.edit_message_text(
+            f"❌ <b>Ошибка:</b> {e.message}",
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        log.exception("Unexpected error clearing devices")
+        await query.edit_message_text(
+            "❌ <b>Произошла ошибка при удалении устройств</b>",
+            reply_markup=user_kb.user_devices_actions(user_uuid, has_devices=False),
             parse_mode=ParseMode.HTML
         )
 
@@ -1390,8 +1460,9 @@ async def user_search_process(update: Update, context: ContextTypes.DEFAULT_TYPE
             hwid_count = 0
             try:
                 hwid_response = await api_client.get_user_devices(user_uuid)
-                devices = hwid_response.get('response', [])
-                hwid_count = len(devices) if devices else 0
+                response_data = hwid_response.get('response', {})
+                # API возвращает {'total': N, 'devices': [...]}
+                hwid_count = response_data.get('total', 0)
             except Exception as e:
                 log.warning(f"Failed to get HWID count: {e}")
             
@@ -1924,6 +1995,13 @@ def register_users_handlers(application):
     
     application.add_handler(bulk_create_conv_handler)
     
+    # Import delete handlers
+    from .delete_handlers import (
+        user_delete_start,
+        user_delete_confirm_handler,
+        user_delete_cancel
+    )
+    
     # Основные хендлеры
     application.add_handler(CallbackQueryHandler(users_menu_callback, pattern="^users_menu$"))
     application.add_handler(CallbackQueryHandler(users_list_callback, pattern="^users_list$"))
@@ -1931,18 +2009,30 @@ def register_users_handlers(application):
     application.add_handler(CallbackQueryHandler(user_view_callback, pattern="^user_view:"))
     application.add_handler(CallbackQueryHandler(user_extend_callback, pattern="^user_extend:"))
     application.add_handler(CallbackQueryHandler(extend_user_callback, pattern="^extend:"))
-    application.add_handler(CallbackQueryHandler(user_delete_confirm_callback, pattern="^user_delete_confirm:"))
-    application.add_handler(CallbackQueryHandler(user_delete_pin_callback, pattern="^user_delete_pin:"))
+    
+    # Smart delete handlers (replacing old PIN-based delete)
+    application.add_handler(CallbackQueryHandler(user_delete_start, pattern="^user_delete_confirm:"))
+    application.add_handler(CallbackQueryHandler(user_delete_cancel, pattern="^user_delete_cancel:"))
     
     # Additional feature handlers
     application.add_handler(CallbackQueryHandler(user_reset_traffic_callback, pattern="^user_reset_traffic:"))
     application.add_handler(CallbackQueryHandler(user_stats_callback, pattern="^user_stats:"))
     application.add_handler(CallbackQueryHandler(user_devices_callback, pattern="^user_devices:"))
+    application.add_handler(CallbackQueryHandler(user_clear_devices_confirm_callback, pattern="^user_clear_devices_confirm:"))
+    application.add_handler(CallbackQueryHandler(user_clear_devices_execute_callback, pattern="^user_clear_devices_execute:"))
     
-    # Message handler for PIN input (должен быть последним)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_delete_pin
-    ))
+    # Combined message handler for ConversationHandlers and delete confirmation
+    async def combined_text_handler(update, context):
+        # Check for delete confirmation first
+        if context.user_data.get('delete_user_confirmation'):
+            await user_delete_confirm_handler(update, context)
+            return
+        # Old PIN handler no longer needed - removed
+    
+    # Message handler (должен быть последним, в группе 1 чтобы не конфликтовать с другими)
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, combined_text_handler),
+        group=1
+    )
     
     log.info("✅ Users feature handlers registered")

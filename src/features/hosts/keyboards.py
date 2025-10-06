@@ -26,10 +26,6 @@ def host_actions(host_uuid: str) -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton("✏️ Редактировать", callback_data=f"host_edit:{host_uuid}"),
-            InlineKeyboardButton("📊 Статистика", callback_data=f"host_stats:{host_uuid}"),
-        ],
-        [
-            InlineKeyboardButton("🔄 Перезапустить", callback_data=f"host_restart:{host_uuid}"),
         ],
         [
             InlineKeyboardButton("🗑️ Удалить", callback_data=f"host_delete:{host_uuid}"),

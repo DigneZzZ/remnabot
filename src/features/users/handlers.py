@@ -158,8 +158,17 @@ async def user_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return
         
+        # Get HWID count
+        hwid_count = 0
+        try:
+            hwid_response = await api_client.get_user_devices(user_uuid)
+            devices = hwid_response.get('response', [])
+            hwid_count = len(devices) if devices else 0
+        except Exception as e:
+            log.warning(f"Failed to get HWID count: {e}")
+        
         # Format user info
-        text = user_fmt.format_user_full(user)
+        text = user_fmt.format_user_full(user, hwid_count=hwid_count)
         
         await query.edit_message_text(
             text,
@@ -1377,11 +1386,20 @@ async def user_search_process(update: Update, context: ContextTypes.DEFAULT_TYPE
             username = user.get('username', 'N/A')
             status = user.get('status', 'unknown').upper()
             
+            # Get HWID count
+            hwid_count = 0
+            try:
+                hwid_response = await api_client.get_user_devices(user_uuid)
+                devices = hwid_response.get('response', [])
+                hwid_count = len(devices) if devices else 0
+            except Exception as e:
+                log.warning(f"Failed to get HWID count: {e}")
+            
             # Форматируем информацию о найденном пользователе
             text = f"""
 ✅ <b>Пользователь найден!</b>
 
-{user_fmt.format_user_full(user)}
+{user_fmt.format_user_full(user, hwid_count=hwid_count)}
             """
             
             # Создаём клавиатуру с действиями

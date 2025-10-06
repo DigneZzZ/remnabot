@@ -33,12 +33,24 @@ def format_date(date_str: str) -> str:
         return date_str
 
 
-def format_user_full(user: Dict[str, Any]) -> str:
+def format_date_short(date_str: str) -> str:
+    """Format ISO date to short readable format (without time)"""
+    if not date_str:
+        return "N/A"
+    
+    try:
+        date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        return date.strftime("%d.%m.%Y")
+    except:
+        return date_str
+
+
+def format_user_full(user: Dict[str, Any], hwid_count: int = 0) -> str:
     """Format full user information"""
     username = user.get('username', 'N/A')
-    uuid = user.get('uuid', 'N/A')
-    short_uuid = user.get('shortUuid', 'N/A')
     status = user.get('status', 'unknown').upper()
+    subscription_url = user.get('subscriptionUrl', 'N/A')
+    tag = user.get('tag', 'Не указан')
     
     # Traffic info
     used_traffic = format_bytes(user.get('usedTrafficBytes', 0))
@@ -47,9 +59,9 @@ def format_user_full(user: Dict[str, Any]) -> str:
     traffic_limit_str = format_bytes(traffic_limit) if traffic_limit else "∞"
     
     # Dates
-    created_at = format_date(user.get('createdAt', ''))
-    expire_at = format_date(user.get('expireAt', ''))
-    online_at = format_date(user.get('onlineAt', '')) if user.get('onlineAt') else "Никогда"
+    created_at = format_date_short(user.get('createdAt', ''))
+    expire_at = format_date_short(user.get('expireAt', ''))
+    online_at = format_date_short(user.get('onlineAt', '')) if user.get('onlineAt') else "Никогда"
     
     # Status emoji
     status_emoji = {
@@ -69,8 +81,10 @@ def format_user_full(user: Dict[str, Any]) -> str:
 
 <b>Имя:</b> {username}
 <b>Статус:</b> {status_emoji} {status}
-<b>UUID:</b> <code>{uuid}</code>
-<b>Short UUID:</b> <code>{short_uuid}</code>
+<b>Тэг:</b> {tag}
+
+🔗 <b>Ссылка подписки:</b>
+<code>{subscription_url}</code>
 
 📊 <b>Трафик:</b>
 ├ Использовано: {used_traffic}
@@ -81,6 +95,8 @@ def format_user_full(user: Dict[str, Any]) -> str:
 ├ Создан: {created_at}
 ├ Истекает: {expire_at}
 └ Последний вход: {online_at}
+
+💻 <b>Устройств (HWID):</b> {hwid_count}
 
 📝 <b>Дополнительно:</b>
 ├ Email: {email}

@@ -26,9 +26,9 @@ Telegram бот для управления Remnawave панелью - сист�
 
 ## 🛠️ Установка
 
-### Вариант 1: Запуск с Docker Hub (Production - Рекомендуется)
+### Вариант 1: GitHub Container Registry (Production - Рекомендуется)
 
-Образы автоматически собираются и публикуются в Docker Hub при каждом push в `main`.
+Образы автоматически собираются и публикуются в GitHub Container Registry при каждом push.
 
 1. Скачайте docker-compose.yml:
 
@@ -64,10 +64,10 @@ docker-compose up -d
 docker-compose logs -f remnabot
 ```
 
-5. Остановка:
+5. Обновление до последней версии:
 
 ```bash
-docker-compose down
+docker-compose pull && docker-compose up -d
 ```
 
 ### Вариант 2: Сборка из исходников
@@ -179,13 +179,13 @@ remnabot/
 
 ## 🐳 Docker & CI/CD
 
-### Docker Hub
+### GitHub Container Registry
 
-Образы автоматически публикуются в Docker Hub при каждом push:
+Образы автоматически публикуются в GitHub Container Registry при каждом push:
 
-- **Latest (main branch)**: `dignezzz/remnabot:latest`
-- **Tagged releases**: `dignezzz/remnabot:v1.0.0`
-- **Branch builds**: `dignezzz/remnabot:develop`
+- **Latest (main branch)**: `ghcr.io/dignezzz/remnabot:latest`
+- **Tagged releases**: `ghcr.io/dignezzz/remnabot:v1.0.0`
+- **Branch builds**: `ghcr.io/dignezzz/remnabot:develop`
 
 ### GitHub Actions
 
@@ -195,26 +195,23 @@ remnabot/
 - ✅ Multi-arch сборка (amd64, arm64)
 - ✅ Кэширование слоёв для ускорения сборки
 - ✅ Автоматическое создание тегов из версий
-- ✅ Публикация в Docker Hub
-
-### Настройка GitHub Secrets
-
-Для работы CI/CD необходимо добавить в GitHub Secrets:
-
-1. `DOCKERHUB_USERNAME` - ваш Docker Hub username
-2. `DOCKERHUB_TOKEN` - Docker Hub access token
+- ✅ Публикация в GitHub Container Registry (ghcr.io)
+- ✅ **Не требует дополнительных секретов** - использует встроенный GITHUB_TOKEN
 
 ### Docker Compose профили
 
 ```bash
-# Production (использует образ из Docker Hub)
+# Production (использует образ из ghcr.io)
 docker-compose up -d
 
-# Development (монтирует локальный код)
+# Development (локальная сборка с hot reload)
 docker-compose -f docker-compose.dev.yml up
 
-# С Redis
-REDIS_ENABLED=true docker-compose up -d
+# Обновление образа
+docker-compose pull && docker-compose up -d
+
+# Просмотр логов
+docker-compose logs -f remnabot
 ```
 
 ## 🎯 Использование

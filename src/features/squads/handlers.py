@@ -45,14 +45,18 @@ async def squads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
         response = await api_client.get_squads()
-        squads = response.get('response', [])
+        
+        # Получаем объект response, а из него массив internalSquads
+        response_data = response.get('response', {})
+        squads = response_data.get('internalSquads', [])
+        total = response_data.get('total', 0)
         
         if not squads:
             text = "👥 <b>Список отрядов</b>\n\nОтряды не найдены"
             keyboard = [[InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu")]]
         else:
             text = f"👥 <b>Список отрядов</b>\n"
-            text += f"<i>Всего: {len(squads)} отрядов</i>\n\n"
+            text += f"<i>Всего: {total} отрядов</i>\n\n"
             text += "Выберите отряд для управления:"
             
             # Build keyboard with squad buttons
@@ -60,7 +64,8 @@ async def squads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             for squad in squads:
                 name = squad.get('name', 'N/A')
                 uuid = squad.get('uuid', '')
-                members_count = squad.get('membersCount', 0)
+                info = squad.get('info', {})
+                members_count = info.get('membersCount', 0) if info else 0
                 
                 button_text = f"👥 {name} | {members_count} чел."
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=f"squad_view:{uuid}")])
@@ -183,9 +188,58 @@ async def squad_delete_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 def register_squads_handlers(application):
     """Register all squad management handlers"""
+    from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, filters
+    from .create_handlers import (
+        squad_create_start,
+        squad_create_name,
+        squad_create_inbound_select,
+        squad_create_cancel,
+        squad_create_conversation_cancel,
+        SQUAD_NAME,
+        SQUAD_INBOUNDS
+    )
+    from .edit_handlers import (
+        squad_add_users,
+        squad_remove_users,
+        squad_accessible_nodes,
+        squad_add_all_users,
+        squad_remove_all_users
+    )
+    
+    # Create squad conversation handler
+    create_conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(squad_create_start, pattern="^squad_create$")
+        ],
+        states={
+            SQUAD_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, squad_create_name)
+            ],
+            SQUAD_INBOUNDS: [
+                CallbackQueryHandler(squad_create_inbound_select, pattern="^squad_create_inbound:")
+            ]
+        },
+        fallbacks=[
+            CallbackQueryHandler(squad_create_cancel, pattern="^squad_create_cancel$"),
+            CommandHandler("cancel", squad_create_conversation_cancel)
+        ],
+    )
+    
+    application.add_handler(create_conv_handler)
+    
+    # Register basic handlers
     application.add_handler(CallbackQueryHandler(squads_menu_callback, pattern="^squads_menu$"))
     application.add_handler(CallbackQueryHandler(squads_list_callback, pattern="^squads_list$"))
     application.add_handler(CallbackQueryHandler(squad_view_callback, pattern="^squad_view:"))
     application.add_handler(CallbackQueryHandler(squad_delete_callback, pattern="^squad_delete:"))
+    
+    # Register edit handlers
+    application.add_handler(CallbackQueryHandler(squad_add_users, pattern="^squad_add_users:"))
+    application.add_handler(CallbackQueryHandler(squad_remove_users, pattern="^squad_remove_users:"))
+    application.add_handler(CallbackQueryHandler(squad_accessible_nodes, pattern="^squad_accessible_nodes:"))
+    
+    # Register mass operations handlers
+    application.add_handler(CallbackQueryHandler(squad_add_all_users, pattern="^squad_add_all:"))
+    application.add_handler(CallbackQueryHandler(squad_remove_all_users, pattern="^squad_remove_all:"))
     
     log.info("✅ Squads feature handlers registered")

@@ -37,6 +37,7 @@ def user_actions(user_uuid: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📊 Статистика", callback_data=f"user_stats:{user_uuid}"),
         ],
         [
+            InlineKeyboardButton("👥 Отряды", callback_data=f"user_squads:{user_uuid}"),
             InlineKeyboardButton("🔄 Сбросить трафик", callback_data=f"user_reset_traffic:{user_uuid}"),
         ],
         [

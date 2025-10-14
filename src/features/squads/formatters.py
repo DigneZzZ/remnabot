@@ -17,29 +17,30 @@ def format_date(date_str: str) -> str:
 def format_squad_full(squad: Dict[str, Any]) -> str:
     """Format full squad information"""
     name = squad.get('name', 'N/A')
-    uuid = squad.get('uuid', 'N/A')
-    description = squad.get('description', 'Описание отсутствует')
-    members_count = squad.get('membersCount', 0)
-    created_at = format_date(squad.get('createdAt', 'N/A'))
+    description = squad.get('description')
     
-    text = f"""
-👥 <b>Информация об отряде</b>
-
-<b>Название:</b> {name}
-<b>UUID:</b> <code>{uuid}</code>
-<b>Описание:</b> {description}
-
-👤 <b>Участники:</b> {members_count} чел.
-
-📅 <b>Создан:</b> {created_at}
-    """
+    text_lines = [
+        "👥 <b>Информация об отряде</b>",
+        "",
+        f"<b>Название:</b> {name}",
+    ]
     
-    return text.strip()
+    if description:
+        text_lines.append(f"<b>Описание:</b> {description}")
+    
+    text_lines.append("")
+    text_lines.append("<b>Управление:</b>")
+    text_lines.append("├ ➕ Добавить пользователей в отряд")
+    text_lines.append("├ ➖ Удалить пользователей из отряда")
+    text_lines.append("└ 📡 Просмотреть доступные ноды")
+    
+    return '\n'.join(text_lines)
 
 
 def format_squad_short(squad: Dict[str, Any]) -> str:
     """Format squad in short format"""
     name = squad.get('name', 'N/A')
-    members_count = squad.get('membersCount', 0)
+    info = squad.get('info', {})
+    members_count = info.get('membersCount', 0) if info else 0
     
     return f"👥 <b>{name}</b> | {members_count} чел."

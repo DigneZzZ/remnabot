@@ -551,6 +551,44 @@ class RemnaWaveAPIClient:
             log.exception(f"Error deleting squad: {e}")
             raise RemnaWaveAPIError(f"Error deleting squad: {str(e)}")
     
+    async def get_squad_accessible_nodes(self, squad_uuid: str) -> Dict[str, Any]:
+        """Get accessible nodes for squad"""
+        try:
+            log.info(f"Fetching accessible nodes for squad {squad_uuid}")
+            response = await self.sdk.internal_squads.get_accessible_nodes(uuid=squad_uuid)
+            return {"response": response.model_dump(by_alias=True)}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error fetching squad accessible nodes: {e}")
+            raise RemnaWaveAPIError(f"Error fetching squad accessible nodes: {str(e)}")
+    
+    async def add_users_to_squad(self, squad_uuid: str, user_uuids: list = None) -> Dict[str, Any]:
+        """Add users to squad (if user_uuids not provided, adds ALL users)"""
+        try:
+            log.info(f"Adding users to squad {squad_uuid}")
+            # SDK method adds ALL users automatically - user_uuids parameter is ignored
+            response = await self.sdk.internal_squads.add_users_to_internal_squad(uuid=squad_uuid)
+            return {"response": response.model_dump(by_alias=True)}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error adding users to squad: {e}")
+            raise RemnaWaveAPIError(f"Error adding users to squad: {str(e)}")
+    
+    async def remove_users_from_squad(self, squad_uuid: str, user_uuids: list = None) -> Dict[str, Any]:
+        """Remove users from squad (if user_uuids not provided, removes ALL users)"""
+        try:
+            log.info(f"Removing users from squad {squad_uuid}")
+            # SDK method removes ALL users automatically - user_uuids parameter is ignored
+            response = await self.sdk.internal_squads.remove_users_from_internal_squad(uuid=squad_uuid)
+            return {"response": response.model_dump(by_alias=True)}
+        except ApiError as e:
+            raise RemnaWaveAPIError(f"API error: {e.error.code}", e.error.status)
+        except Exception as e:
+            log.exception(f"Error removing users from squad: {e}")
+            raise RemnaWaveAPIError(f"Error removing users from squad: {str(e)}")
+    
     # ======================
     # SYSTEM API
     # ======================

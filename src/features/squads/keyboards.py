@@ -24,14 +24,16 @@ def squad_actions(squad_uuid: str) -> InlineKeyboardMarkup:
     """Squad action buttons"""
     keyboard = [
         [
-            InlineKeyboardButton("✏️ Редактировать", callback_data=f"squad_edit:{squad_uuid}"),
-            InlineKeyboardButton("👤 Участники", callback_data=f"squad_members:{squad_uuid}"),
+            InlineKeyboardButton("👤➕ Добавить пользователей", callback_data=f"squad_add_users:{squad_uuid}"),
         ],
         [
-            InlineKeyboardButton("📊 Статистика", callback_data=f"squad_stats:{squad_uuid}"),
+            InlineKeyboardButton("👤➖ Удалить пользователей", callback_data=f"squad_remove_users:{squad_uuid}"),
         ],
         [
-            InlineKeyboardButton("🗑️ Удалить", callback_data=f"squad_delete:{squad_uuid}"),
+            InlineKeyboardButton("� Доступные ноды", callback_data=f"squad_accessible_nodes:{squad_uuid}"),
+        ],
+        [
+            InlineKeyboardButton("🗑️ Удалить отряд", callback_data=f"squad_delete:{squad_uuid}"),
         ],
         [
             InlineKeyboardButton("◀️ К списку", callback_data="squads_list"),

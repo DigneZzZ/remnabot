@@ -15,18 +15,19 @@ from src.services.api import api_client, RemnaWaveAPIError
 
 from . import keyboards as user_kb
 from . import formatters as user_fmt
+from . import squad_handlers
 
 # Conversation states для редактирования пользователя
 EDIT_CHOOSING, EDIT_TRAFFIC_LIMIT, EDIT_EXPIRE_DATE, EDIT_STATUS = range(4)
 
 # Conversation states для создания пользователя
-CREATE_USERNAME, CREATE_TRAFFIC_LIMIT, CREATE_EXPIRE_DAYS, CREATE_CONFIRM = range(4, 8)
+CREATE_USERNAME, CREATE_TRAFFIC_LIMIT, CREATE_EXPIRE_DAYS, CREATE_SQUAD, CREATE_CONFIRM = range(4, 9)
 
 # Conversation states для поиска
-SEARCH_INPUT = 8
+SEARCH_INPUT = 9
 
 # Conversation states для массового создания с пресетами
-BULK_COUNT, BULK_DURATION, BULK_TRAFFIC, BULK_RESET, BULK_CONFIRM = range(9, 14)
+BULK_COUNT, BULK_DURATION, BULK_TRAFFIC, BULK_RESET, BULK_SQUAD, BULK_CONFIRM = range(10, 16)
 
 
 @admin_only
@@ -1188,39 +1189,13 @@ async def create_expire_days_process(update: Update, context: ContextTypes.DEFAU
             context.user_data['create_expire_at'] = expire_date.isoformat()
             expire_str = "Без ограничения (~100 лет)"
         
-        username = context.user_data.get('create_username')
-        traffic_bytes = context.user_data.get('create_traffic_limit', 0)
-        traffic_str = user_fmt.format_bytes(traffic_bytes) if traffic_bytes > 0 else "Безлимит"
-        
-        # Создаём клавиатуру подтверждения
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Создать", callback_data="create_confirm"),
-                InlineKeyboardButton("❌ Отменить", callback_data="create_cancel")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        text = f"""
-➕ <b>Подтверждение создания пользователя</b>
-
-<b>Проверьте данные:</b>
-
-👤 Имя: <code>{username}</code>
-📊 Лимит трафика: {traffic_str}
-📅 Срок действия: {expire_str}
-🔄 Статус: ACTIVE
-
-Всё верно?
-        """
-        
+        # Переходим к выбору squad'ов
         await update.message.reply_text(
-            text.strip(),
-            reply_markup=reply_markup,
+            "⏳ Загрузка списка отрядов...",
             parse_mode=ParseMode.HTML
         )
         
-        return CREATE_CONFIRM
+        return await create_squad_selection(update, context)
         
     except ValueError:
         await update.message.reply_text(
@@ -1228,6 +1203,207 @@ async def create_expire_days_process(update: Update, context: ContextTypes.DEFAU
             parse_mode=ParseMode.HTML
         )
         return CREATE_EXPIRE_DAYS
+
+
+@admin_only
+async def create_squad_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show squad selection menu for user creation"""
+    try:
+        # Получаем список всех squad'ов
+        squads_response = await api_client.get_squads()
+        squads = squads_response.get('response', {}).get('internalSquads', [])
+        
+        if not squads:
+            # Если squad'ов нет, пропускаем этот шаг
+            context.user_data['create_squads'] = []
+            return await show_create_confirmation(update, context)
+        
+        # Инициализируем список выбранных squad'ов если его ещё нет
+        if 'create_squads' not in context.user_data:
+            context.user_data['create_squads'] = []
+        
+        selected_squads = context.user_data.get('create_squads', [])
+        
+        # Создаём клавиатуру с squad'ами
+        keyboard = []
+        for squad in squads:
+            squad_uuid = squad.get('uuid')
+            squad_name = squad.get('name', 'Без имени')
+            
+            # Проверяем выбран ли squad
+            if squad_uuid in selected_squads:
+                button_text = f"✅ {squad_name}"
+                callback_data = f"create_squad_remove:{squad_uuid}"
+            else:
+                button_text = f"⬜ {squad_name}"
+                callback_data = f"create_squad_add:{squad_uuid}"
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+        
+        # Добавляем кнопку продолжения
+        keyboard.append([
+            InlineKeyboardButton("➡️ Продолжить", callback_data="create_squad_done"),
+            InlineKeyboardButton("❌ Отменить", callback_data="create_cancel")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        selected_text = f"Выбрано: {len(selected_squads)}" if selected_squads else "Ничего не выбрано"
+        
+        text = f"""
+👥 <b>Выбор отрядов</b>
+
+Выберите отряды для пользователя (необязательно):
+
+{selected_text}
+
+Нажмите на отряд чтобы добавить/убрать его, затем нажмите "Продолжить".
+        """
+        
+        # Если это callback (переключение squad'ов), редактируем сообщение
+        if hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.edit_message_text(
+                text.strip(),
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            # Если это первый вход (из message), отправляем новое сообщение
+            await update.message.reply_text(
+                text.strip(),
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        
+        return CREATE_SQUAD
+        
+    except Exception as e:
+        log.exception("Error loading squads for user creation")
+        # При ошибке просто пропускаем выбор squad'ов
+        context.user_data['create_squads'] = []
+        return await show_create_confirmation(update, context)
+
+
+@admin_only
+async def create_squad_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Add squad to user creation"""
+    query = update.callback_query
+    await query.answer()
+    
+    squad_uuid = query.data.split(":")[1]
+    
+    # Добавляем squad в список
+    if 'create_squads' not in context.user_data:
+        context.user_data['create_squads'] = []
+    
+    if squad_uuid not in context.user_data['create_squads']:
+        context.user_data['create_squads'].append(squad_uuid)
+    
+    # Обновляем меню
+    return await create_squad_selection(update, context)
+
+
+@admin_only
+async def create_squad_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Remove squad from user creation"""
+    query = update.callback_query
+    await query.answer()
+    
+    squad_uuid = query.data.split(":")[1]
+    
+    # Убираем squad из списка
+    if 'create_squads' in context.user_data and squad_uuid in context.user_data['create_squads']:
+        context.user_data['create_squads'].remove(squad_uuid)
+    
+    # Обновляем меню
+    return await create_squad_selection(update, context)
+
+
+@admin_only
+async def create_squad_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Finish squad selection and show confirmation"""
+    query = update.callback_query
+    await query.answer()
+    
+    return await show_create_confirmation(update, context)
+
+
+@admin_only
+async def show_create_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show user creation confirmation"""
+    username = context.user_data.get('create_username')
+    traffic_bytes = context.user_data.get('create_traffic_limit', 0)
+    traffic_str = user_fmt.format_bytes(traffic_bytes) if traffic_bytes > 0 else "Безлимит"
+    
+    expire_at = context.user_data.get('create_expire_at')
+    if expire_at:
+        expire_date = datetime.fromisoformat(expire_at)
+        # Проверяем, является ли это "бессрочным" (>90 лет в будущем)
+        days_until_expire = (expire_date - datetime.now(timezone.utc)).days
+        if days_until_expire > 32850:  # ~90 лет
+            expire_str = "Без ограничения (~100 лет)"
+        else:
+            expire_str = expire_date.strftime('%d.%m.%Y %H:%M')
+    else:
+        expire_str = "Не указана"
+    
+    # Получаем информацию о выбранных squad'ах
+    selected_squad_uuids = context.user_data.get('create_squads', [])
+    if selected_squad_uuids:
+        try:
+            squads_response = await api_client.get_squads()
+            all_squads = squads_response.get('response', {}).get('internalSquads', [])
+            selected_squad_names = [
+                s.get('name', 'Без имени') 
+                for s in all_squads 
+                if s.get('uuid') in selected_squad_uuids
+            ]
+            squads_str = "\n".join([f"  • {name}" for name in selected_squad_names])
+        except:
+            squads_str = f"{len(selected_squad_uuids)} отряд(ов)"
+    else:
+        squads_str = "Не назначены"
+    
+    # Создаём клавиатуру подтверждения
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Создать", callback_data="create_confirm"),
+            InlineKeyboardButton("❌ Отменить", callback_data="create_cancel")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"""
+➕ <b>Подтверждение создания пользователя</b>
+
+<b>Проверьте данные:</b>
+
+👤 Имя: <code>{username}</code>
+📊 Лимит трафика: {traffic_str}
+📅 Срок действия: {expire_str}
+👥 Отряды:
+{squads_str}
+🔄 Статус: ACTIVE
+
+Всё верно?
+    """
+    
+    # Если это callback, редактируем сообщение
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text.strip(),
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        # Если это message, отправляем новое сообщение
+        await update.message.reply_text(
+            text.strip(),
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+    
+    return CREATE_CONFIRM
 
 
 @admin_only
@@ -1240,6 +1416,7 @@ async def create_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
         username = context.user_data.get('create_username')
         traffic_limit = context.user_data.get('create_traffic_limit', 0)
         expire_at = context.user_data.get('create_expire_at')
+        selected_squads = context.user_data.get('create_squads', [])
         
         # Создаём пользователя через API
         # expire_at обязательно должен быть в SDK (snake_case!)
@@ -1249,6 +1426,10 @@ async def create_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
             "expire_at": expire_at,  # Всегда передаём, так как SDK требует это поле
             "status": "ACTIVE"
         }
+        
+        # Добавляем squad'ы если они выбраны
+        if selected_squads:
+            user_data["active_internal_squads"] = selected_squads
         
         await query.edit_message_text(
             "⏳ Создание пользователя...",
@@ -1931,6 +2112,12 @@ def register_users_handlers(application):
             CREATE_EXPIRE_DAYS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, create_expire_days_process),
             ],
+            CREATE_SQUAD: [
+                CallbackQueryHandler(create_squad_add, pattern="^create_squad_add:"),
+                CallbackQueryHandler(create_squad_remove, pattern="^create_squad_remove:"),
+                CallbackQueryHandler(create_squad_done, pattern="^create_squad_done$"),
+                CallbackQueryHandler(create_cancel_callback, pattern="^create_cancel$"),
+            ],
             CREATE_CONFIRM: [
                 CallbackQueryHandler(create_confirm_callback, pattern="^create_confirm$"),
                 CallbackQueryHandler(create_cancel_callback, pattern="^create_cancel$"),
@@ -2020,6 +2207,11 @@ def register_users_handlers(application):
     application.add_handler(CallbackQueryHandler(user_devices_callback, pattern="^user_devices:"))
     application.add_handler(CallbackQueryHandler(user_clear_devices_confirm_callback, pattern="^user_clear_devices_confirm:"))
     application.add_handler(CallbackQueryHandler(user_clear_devices_execute_callback, pattern="^user_clear_devices_execute:"))
+    
+    # Squad management handlers
+    application.add_handler(CallbackQueryHandler(squad_handlers.user_squads_menu, pattern="^user_squads:"))
+    application.add_handler(CallbackQueryHandler(squad_handlers.user_squad_add, pattern="^user_squad_add:"))
+    application.add_handler(CallbackQueryHandler(squad_handlers.user_squad_remove, pattern="^user_squad_remove:"))
     
     # Combined message handler for ConversationHandlers and delete confirmation
     async def combined_text_handler(update, context):
